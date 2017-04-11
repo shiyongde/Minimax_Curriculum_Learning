@@ -188,18 +188,14 @@ def plt_error_vs_ntrain(dataset, error, ntrain, random, spl, spl_info, spld, spl
             cc = 'red'
             ll = ['MCL ', 'w/o random']
             mk = 'o'
-            #trial[:, ttid[1]] -= 1.5
         elif cLearn_info[i] == 1:
             cc = 'blue'
             ll = ['MCL ', 'w/o submodular']
             mk = 'o'
-            #trial[:, ttid[0]] += 0.1
-            #trial[:, ttid[1]] += 0.1
         else:
             cc = cLearn_color[j]
             ll = ['MCL+random ', str(info[0])+','+str(info[1])]
             mk = 'v'
-            #trial[:, ttid[1]] -= 1.5
             j += 1
         # train err
         ax.plot(trial[:, xaxis], trial[:, ttid[0]], c = cc, ls = '-', marker = mk, markersize = 7, linewidth=2, alpha=0.65, label = ll[0] + 'train:'+ll[1])
@@ -278,18 +274,14 @@ def plt_error_cifar10(dataset, ntrain, random, spl, spl_info, spld, spld_info, c
             cc = 'red'
             ll = ['MCL ', 'w/o random']
             mk = 'o'
-            #trial[:, ttid[1]] -= 1.5
         elif cLearn_info[i] == 1:
             cc = 'blue'
             ll = ['MCL ', 'w/o submodular']
             mk = 'o'
-            #trial[:, ttid[0]] += 0.5
-            #trial[:, ttid[1]] += 0.5
         else:
             cc = cLearn_color[j]
             ll = ['MCL+random ', str(info[0])+','+str(info[1])]
             mk = 'v'
-            #trial[:, ttid[1]] -= 1.5
             j += 1
         # test err
         ax.plot(trial[:, xaxis], 100-trial[:, -1], c = cc, ls = '--', marker = mk, markersize = 7, linewidth=2, alpha=0.65, label = ll[0] + 'test:'+ll[1])
