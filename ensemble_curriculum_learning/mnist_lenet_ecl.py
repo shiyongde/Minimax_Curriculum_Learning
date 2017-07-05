@@ -33,8 +33,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 from scipy.sparse import issparse
 #from sklearn.manifold import TSNE
 
-from models import *
-import wideresnet as wrn
+# from models import *
 
 #from facloc_graph import facloc_graph
 #from satcoverage import satcoverage
@@ -47,10 +46,8 @@ from greedy2D import greedy2D
 # used for logging to TensorBoard
 from tensorboard_logger import configure, log_value
 
-parser = argparse.ArgumentParser(description='PyTorch WideResNet Training on CIFAR')
-parser.add_argument('--dataset', default='cifar10', type=str,
-                    help='dataset (cifar10 [default] or cifar100)')
-parser.add_argument('--epochs', default=101, type=int,
+parser = argparse.ArgumentParser(description='PyTorch LeNet Training')
+parser.add_argument('--epochs', default=31, type=int,
                     help='number of total epochs to run for learner')
 parser.add_argument('--epochs4loss', default=10, type=int,
                     help='number of total epochs to run for loss predictor')
@@ -58,51 +55,49 @@ parser.add_argument('--start-epoch', default=0, type=int,
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=128, type=int,
                     help='mini-batch size (default: 128)')
-parser.add_argument('--lr', '--learning-rate', default=2e-2, type=float,
+parser.add_argument('--lr', '--learning-rate', default=8e-2, type=float,
                     help='initial learning rate')
-parser.add_argument('--lr_lp', '--learning-rate-loss-predict', default=1e-2, type=float,
+parser.add_argument('--lr_lp', '--learning-rate-loss-predict', default=5e-2, type=float,
                     help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--nesterov', default=True, type=bool, help='nesterov momentum')
-parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
+parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
                     help='weight decay (default: 5e-4)')
-parser.add_argument('--print-freq', default=5, type=int,
+parser.add_argument('--print-freq', default=2, type=int,
                     help='print frequency (default: 10)')
-parser.add_argument('--lr-freq', default=10, type=int,
+parser.add_argument('--lr-freq', default=8, type=int,
                     help='learning rate changing frequency (default: 5)')
 parser.add_argument('--assign-freq', default=1, type=int,
                     help='training set assignment changing frequency (default: 1)')
 parser.add_argument('--random-freq', default=10, type=int,
                     help='insert epoch with random samples frequency (default: 10)')
-parser.add_argument('--fea-freq', default=101, type=int,
+parser.add_argument('--fea-freq', default=100, type=int,
                     help='insert epoch with random samples frequency (default: 10)')
 parser.add_argument('--no-augment', dest='augment', action='store_false',
                     help='whether to use standard augmentation (default: True)')
-parser.add_argument('--resume', default='', type=str,
-                    help='path to latest checkpoint (default: none)')
-parser.add_argument('--name', default='Conv4Net', type=str,
+parser.add_argument('--name', default='LeNet5', type=str,
                     help='name of experiment')
 parser.add_argument('--tensorboard',
                     help='Log progress to TensorBoard', action='store_true')
-parser.add_argument('--num_cluster', default=1000, type=int,
+parser.add_argument('--num_cluster', default=800, type=int,
                     help='Number of clusters (default: 1000)')
-parser.add_argument('--num_learner_per_cluster', default=6, type=int,
+parser.add_argument('--num_learner_per_cluster', default=1, type=int,
                     help='Initial number of learners assigned to each cluster (default: 4)')
-parser.add_argument('--num_cluster_per_learner', default=40, type=int,
+parser.add_argument('--num_cluster_per_learner', default=30, type=int,
                     help='Initial number of clusters assigned to each learner (default: 100)')
 parser.add_argument('--deltak', default=1, type=int,
                     help='decreased number of clusters in training set per epoch (default: 1)')
-parser.add_argument('--loss_weight', default=3.5e+1, type=float,
+parser.add_argument('--loss_weight', default=2.8e+1, type=float,
                     help='Initial weight of loss term (default: 1.5e+9)')
 parser.add_argument('--curriculum_rate', default=0.9, type=float,
                     help='Increasing ratio of loss weight (default: 0.03)')
-parser.add_argument('--num_learner', default=10, type=int,
+parser.add_argument('--num_learner', default=8, type=int,
                     help='number of learners/models (default: 10)')
 parser.add_argument('--func', default='facloc', type=str,
                     help='Submodular function for diversity regularization (default: facloc)')
 parser.add_argument('--func_parameter', default=['euclidean_gaussian', 20], type=float,
                     help='Parameter of submodular function (default: 0.5)')
-parser.add_argument('--use_submodular', default=1, type = int,
+parser.add_argument('--use_submodular', default=0, type = int,
                     help='Parameter of submodular function (default: 0.5)')
 
 parser.set_defaults(bottleneck=True)
@@ -111,94 +106,84 @@ parser.set_defaults(augment=True)
 best_prec1 = 0
 
 ## network
-class Conv4Net(nn.Module):
-    def __init__(self, nout):
-        super(Conv4Net, self).__init__()
-        self.bn0 = nn.BatchNorm2d(3)
-        self.conv1 = nn.Conv2d(3, 64, 3, 1)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.conv2 = nn.Conv2d(64, 64, 3, 1)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(64, 128, 3, 1)
-        self.bn3 = nn.BatchNorm2d(128)
-        self.conv4 = nn.Conv2d(128, 128, 3, 1)
-        self.bn4 = nn.BatchNorm2d(128)
-        self.fc1 = nn.Linear(5*5*128, 128)
-        self.bn5 = nn.BatchNorm1d(128)
-        self.fc2 = nn.Linear(128, 128)
-        self.bn6 = nn.BatchNorm1d(128)
-        self.fc3 = nn.Linear(128, nout)
-        self.ceriation = nn.CrossEntropyLoss()
+class MLPNet(nn.Module):
+    def __init__(self):
+        super(MLPNet, self).__init__()
+        self.fc1 = nn.Linear(28*28, 500)
+        self.fc2 = nn.Linear(500, 256)
+        self.fc3 = nn.Linear(256, 10)
     def forward(self, x):
-        x = self.bn0(x)
-        x = self.bn1(self.conv1(x))
-        x = F.relu(x)
-        x = self.bn2(self.conv2(x))
-        x = F.relu(x)
-        x = F.max_pool2d(x, 2, 2)
-        x = self.bn3(self.conv3(x))
-        x = F.relu(x) 
-        x = self.bn4(self.conv4(x))
-        x = F.relu(x)
-        x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 5*5*128)
-        x = self.bn5(self.fc1(x))
-        x = F.relu(x)
-        y = self.bn6(self.fc2(x))
-        x = F.relu(y)
-        x = self.fc3(x)
+        x = x.view(-1, 28*28)
+        x = F.relu(self.fc1(x))
+        y = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(y))
         return y, x
     def name(self):
-        return 'Conv4Net'
+        return 'mlpnet'
 
-class Conv4Net_loss_predict(nn.Module):
+class LeNet(nn.Module):
+    def __init__(self):
+        super(LeNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, 20, 5, 1)
+        self.bn1 = nn.BatchNorm2d(20)
+        self.conv2 = nn.Conv2d(20, 50, 5, 1)
+        self.bn2 = nn.BatchNorm2d(50)
+        self.fc1 = nn.Linear(4*4*50, 500)
+        self.bn3 = nn.BatchNorm1d(500)
+        self.fc2 = nn.Linear(500, 10)
+        self.ceriation = nn.CrossEntropyLoss()
+    def forward(self, x):
+        x = self.bn1(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(x) # F.sigmoid(x)
+        x = self.bn2(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(x)
+        x = x.view(-1, 4*4*50)
+        y = self.bn3(self.fc1(x))
+        x = F.relu(y)
+        x = self.fc2(x)
+        return y, x
+    def name(self):
+        return 'lenet'
+
+class LeNet_loss_predict(nn.Module):
     def __init__(self, nout):
-        super(Conv4Net_loss_predict, self).__init__()
-        self.bn0 = nn.BatchNorm2d(3)
-        self.conv1 = nn.Conv2d(3, 10, 3, 1)
+        super(LeNet_loss_predict, self).__init__()
+        self.conv1 = nn.Conv2d(1, 8, 5, 1)
         init.xavier_uniform(self.conv1.weight.data)
-        self.bn1 = nn.BatchNorm2d(10)
-        self.conv2 = nn.Conv2d(10, 10, 3, 1)
+        self.bn1 = nn.BatchNorm2d(8)
+        self.conv2 = nn.Conv2d(8, 16, 5, 1)
         init.xavier_uniform(self.conv2.weight.data)
-        self.bn2 = nn.BatchNorm2d(10)
-        self.conv3 = nn.Conv2d(10, 18, 3, 1)
-        init.xavier_uniform(self.conv3.weight.data)
-        self.bn3 = nn.BatchNorm2d(18)
-        self.conv4 = nn.Conv2d(18, 18, 3, 1)
-        init.xavier_uniform(self.conv4.weight.data)
-        self.bn4 = nn.BatchNorm2d(18)
-        self.fc1 = nn.Linear(5*5*18, 100)
+        self.bn2 = nn.BatchNorm2d(16)
+        self.fc1 = nn.Linear(4*4*16, 100)
         init.xavier_uniform(self.fc1.weight.data)
-        self.bn5 = nn.BatchNorm1d(100)
+        self.bn3 = nn.BatchNorm1d(100)
         self.fc2 = nn.Linear(100, nout)
         init.xavier_uniform(self.fc2.weight.data)
-        self.bn6 = nn.BatchNorm1d(nout)
-        # self.fc3 = nn.Linear(64, nout)
+        self.bn4 = nn.BatchNorm1d(nout)
+        # self.fc3 = nn.Linear(40, nout)
         # init.xavier_uniform(self.fc3.weight.data)
-        # self.bn7 = nn.BatchNorm1d(nout)
         self.ceriation = nn.MSELoss()
     def forward(self, x):
-        x = self.bn0(x)
         x = self.bn1(self.conv1(x))
         x = F.elu(x)
+        x = F.max_pool2d(x, 2, 2)
         x = self.bn2(self.conv2(x))
         x = F.elu(x)
         x = F.max_pool2d(x, 2, 2)
-        x = self.bn3(self.conv3(x))
-        x = F.elu(x) 
-        x = self.bn4(self.conv4(x))
+        x = x.view(-1, 4*4*16)
+        x = self.bn3(self.fc1(x))
         x = F.elu(x)
-        x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 5*5*18)
-        x = self.bn5(self.fc1(x))
-        x = F.elu(x)
-        x = self.bn6(self.fc2(x))
-        # x = F.elu(x)
-        # x = self.bn7(self.fc3(x))
-        # x = F.log_softmax(x)
+        # x = self.bn4(self.fc2(x))
+        # x = F.log_softmax(F.elu(x))
+        x = F.elu(self.fc2(x))
+        # x = self.bn4(self.fc2(x))
+        # x = F.sigmoid(x)
+        # x = self.fc3(x)
         return x
     def name(self):
-        return 'Conv4Net_loss_predict'
+        return 'lenet_loss_predict'
 
 def main():
 
@@ -207,35 +192,14 @@ def main():
     if args.tensorboard: configure("runs/%s"%(args.name))
 
     # data preprocessing
-    normalize = transforms.Normalize(mean=[x/255.0 for x in [125.3, 123.0, 113.9]],
-                                     std=[x/255.0 for x in [63.0, 62.1, 66.7]])
-
-    # data preprocessing
-    if args.augment:
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-            ])
-    else:
-        transform_train = transforms.Compose([
-            transforms.ToTensor(),
-            normalize,
-            ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        normalize
-        ])
+    trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (1.0,))])
 
     # train/test set
     kwargs = {'num_workers': 1, 'pin_memory': True}
-    assert(args.dataset == 'cifar10' or args.dataset == 'cifar100')
-    nout = 10 if args.dataset == 'cifar10' else 100
-    train_set = datasets.__dict__[args.dataset.upper()]('/s0/tianyizh/data', train=True, download=True, transform=transform_train)
-    train_set_copy = datasets.__dict__[args.dataset.upper()]('/s0/tianyizh/data', train=True, transform=transform_train)
-    val_set = datasets.__dict__[args.dataset.upper()]('/s0/tianyizh/data', train=False, transform=transform_test)
-    val_set_copy = datasets.__dict__[args.dataset.upper()]('/s0/tianyizh/data', train=False, transform=transform_test)
+    train_set = datasets.MNIST('/mnt/s0/tianyizh/data', train=True, download=True, transform=trans)
+    train_set_copy = datasets.MNIST('/mnt/s0/tianyizh/data', train=True, transform=trans)
+    val_set = datasets.MNIST('/mnt/s0/tianyizh/data', train=False, transform=trans)
+    val_set_copy = datasets.MNIST('/mnt/s0/tianyizh/data', train=False, transform=trans)
     
     train_label = train_set.train_labels
     n_train = len(train_label)
@@ -246,8 +210,7 @@ def main():
     # learner models
     model = []
     for i in range(args.num_learner):
-        model.append(Conv4Net(nout).cuda())
-        # model.append(wrn.WideResNet(args.layers, args.dataset == 'cifar10' and 10 or 100, args.widen_factor, dropRate=args.droprate))
+        model.append(LeNet().cuda())
 
     for i in range(args.num_learner):
         # get the number of model parameters
@@ -274,7 +237,7 @@ def main():
     # optimizer for learner models
     optimizer = []
     for i in range(args.num_learner):
-        optimizer.append(torch.optim.SGD(model[i].parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True))
+        optimizer.append(torch.optim.SGD(model[i].parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay))
     # optimizer for loss predictor
     # optimizer_net = torch.optim.Adam(net.parameters(), args.lr_lp, weight_decay=args.weight_decay)
 
@@ -284,13 +247,13 @@ def main():
     output_seq = ()
     submodular_time = 0
     training_time = 0
-    logfile = open('cifar_Conv4Net_ECL_l2_sub_log.txt','a')
+    logfile = open('mnist_LeNet_ECL_l2_800_wok_wosub_log.txt','a')
 
     # compute loss and feature of training samples
     _, train_fea = loss_loader(fea_loader, model, logsoftmax, True)
 
     # clustering
-    labels_, labels_weight, cluster_centers_, center_nn = get_cluster(train_fea, 100, args.num_cluster, 'mnist', savefile = False)
+    labels_, labels_weight, cluster_centers_, center_nn = get_cluster(train_fea, 80, args.num_cluster, 'mnist', savefile = False)
     args.num_cluster = len(center_nn)
 
     # Initialize submodular function and greedy algorithm
@@ -326,7 +289,7 @@ def main():
             # submodular optimization to select clusters for each learner
             if args.use_submodular:
                 # rewardMat = (lossMat.max(1)[0].expand(lossMat.size(0), lossMat.size(1)) - lossMat).numpy().T
-                rewardMat = ((2.0 - lossMat).numpy().T) * (labels_weight * args.loss_weight)
+                rewardMat = ((4.0 - lossMat).numpy().T) * (labels_weight * args.loss_weight)
                 train_clusters, greedyObj, Vsize = greedyAlg(args.num_learner_per_cluster, rewardMat)
                 topk_L = sum([sum(np.partition(rewardMat[:, i], -args.num_learner_per_cluster)[-args.num_learner_per_cluster:]) for i in range(args.num_cluster)])
                 print 'greedyObj, topk_L, topk_F:', greedyObj, topk_L, topk_F
@@ -385,8 +348,9 @@ def main():
 
         # update clustering and submodular function F
         if epoch % args.fea_freq == 0:
+
             # clustering
-            labels_, labels_weight, cluster_centers_, center_nn = get_cluster(train_fea, 100, args.num_cluster, 'mnist', savefile = False)
+            labels_, labels_weight, cluster_centers_, center_nn = get_cluster(train_fea, 80, args.num_cluster, 'mnist', savefile = False)
             args.num_cluster = len(center_nn)
 
             # Initialize submodular function and greedy algorithm
@@ -407,7 +371,7 @@ def main():
             train_loss_loader = torch.utils.data.DataLoader(train_set_copy, batch_size=args.batch_size, shuffle=True, **kwargs)
             print('--------------------Now update loss predictor--------------------')
             regression_loss = np.zeros(args.epochs4loss)
-            net = Conv4Net_loss_predict(args.num_learner).cuda()
+            net = LeNet_loss_predict(args.num_learner).cuda()
             print('loss predictor: number of parameters: {}'.format(sum([p.data.nelement() for p in net.parameters()])))
             optimizer_net = torch.optim.Adam(net.parameters(), args.lr_lp, weight_decay=args.weight_decay)
             for epoch_lp in range(args.epochs4loss):
@@ -485,7 +449,7 @@ def main():
     
     # save result to file
     output_seq = np.vstack(output_seq)
-    np.savetxt('cifar_Conv4Net_ECL_l2_sub_result.txt', output_seq)
+    np.savetxt('mnist_LeNet_ECL_l2_800_wok_wosub_result.txt', output_seq)
     logfile.close()
 
     # show final result
@@ -627,16 +591,15 @@ def loss_loader(train_loader, model, criterion, loss_predictor=True):
     train_loss = torch.cat(train_loss, 0).cpu()
     # np.save('train_loss', train_loss.cpu().numpy())
     # sys.exit(1)
-    print 'max and min loss', train_loss.max(), train_loss.min()
-    train_loss = train_loss.clamp(0, 2.0)
+    train_loss = train_loss.clamp(1e-12, 4.0)
     if loss_predictor:
-        train_loss = torch.div(train_loss, train_loss.sum(1).expand(train_loss.size(0), train_loss.size(1)))
+        # train_loss = torch.div(train_loss, train_loss.sum(1).expand(train_loss.size(0), train_loss.size(1)))
         train_loss = -train_loss.log()
         # _, ind_loss = torch.topk(train_loss, args.num_learner_per_cluster, 1, largest = False)
         # train_loss = torch.zeros(train_loss.size()).scatter_(1, ind_loss, 1.0/args.num_learner_per_cluster)
         train_fea = torch.cat(train_fea, 0).data.cpu().numpy()
     else:
-        train_loss = train_loss.clamp(0, 2.0)
+        train_loss = train_loss.clamp(1e-12, 4.0)
         lossAvg = [losses[i].avg for i in range(num_model)]
         PrecAvg = [top1[i].avg for i in range(num_model)]
 

@@ -3,6 +3,8 @@ from numpy import *
 #from matplotlib.pyplot import *
 # from sklearn import *
 import heapq
+# import time
+# from copy import deepcopy
 # from submdl2D import submdl_teach_welfare
 #from facloc import facloc
 #from facloc_graph import facloc_graph
@@ -15,11 +17,6 @@ import heapq
 
 class greedy2D:
 
-	def pair2set(a, num_learner):
-		a = asarray(a).T
-		A = [a[1, a[0]==i].tolist() for i in range(num_learner)]
-		return A
-
 	def __init__(self, submdl, prune = True):
 
 		self.f = submdl
@@ -27,7 +24,6 @@ class greedy2D:
 		self.num_learner = self.f.num_learner
 		# self.Vsize = self.num_sample * self.num_learner
 		# self.V = asarray(unravel_index(range(self.Vsize), (self.num_learner, self.num_sample), 'C')).T.tolist()
-		self.num_sample_learner = [0] * self.num_sample
 		self.prune = prune
 
 		if self.prune:
@@ -49,7 +45,7 @@ class greedy2D:
 
 		# self._update_set()
 
-	def update_V():
+	def update_V(self):
 
 		# pruning of V
 		if self.prune:
@@ -58,17 +54,17 @@ class greedy2D:
 			self.V = ()
 			self.Vsize = 0
 			for i in range(self.num_sample):
-				left_index = where(sinGain[:, i] >= min(partition(minGain[:, i], -k)[-k:]))[0]
-				self.V = self.V + (array(repeat(i, len(left_index)), left_index).T, )
+				left_index = where(sinGain[:, i] >= min(partition(minGain[:, i], -self.k)[-self.k:]))[0]
+				self.V = self.V + (array([left_index, repeat(i, len(left_index))]).T, )
 				self.Vsize += len(left_index)
-			self.V = np.vstack(self.V).tolist()
+			self.V = vstack(self.V).tolist()
 		else:
 			self.Vsize = self.num_sample * self.num_learner
 			self.V = asarray(unravel_index(range(self.Vsize), (self.num_learner, self.num_sample), 'C')).T.tolist()				
 
 	def __call__(self, k, rewardMat, lazy = True):
 
-
+		# print 'set all to empty'
 		self.k = k
 		self.nn = []
 		self.Lobj = []
@@ -76,7 +72,11 @@ class greedy2D:
 		self.blacklist = []
 		self.active_learner = []
 		self.obj = 0
+		# self.heap_obj = []
+		# self.nn_obj = []
 		self.S = [[] for i in range(self.num_learner)]
+		self.num_sample_learner = [0] * self.num_sample
+		# print 'all are empty now'
 
 		self.f.update_reward(rewardMat)
 		self.update_V()
@@ -88,6 +88,7 @@ class greedy2D:
 
 		else:
 
+			# start = time.time()
 			while (len(self.V) > 0):
 
 				if lazy:
@@ -95,16 +96,25 @@ class greedy2D:
 				else:
 					s0 = self._update_heap()
 
-				self._update_set(s0, lazy)
+				if len(s0) >= 1:
+					self._update_set(s0, lazy)
+				else:
+					break
 
-				#print self.S
+				# print 'S->', self.S
+			# print 'time=', time.time() - start
 
 		#print 'Objective function = ', self.obj
 		#print 'Solution Set = ', self.S		
 
 		return self.S, self.obj, self.Vsize
 
-	def add2S(a, lazy):
+	def pair2set(self, a):
+		a = asarray(a).T
+		A = [a[1, a[0]==i].tolist() for i in range(self.num_learner)]
+		return A
+
+	def add2S(self, a, lazy):
 		self.S[a[0]].append(a[1])
 		self.active_learner = a[0]
 		self.num_sample_learner[a[1]] += 1
@@ -124,73 +134,86 @@ class greedy2D:
 
 	def _update_set(self, s, lazy):
 
-		# s = heapq.heappop(self.heap_obj)
-		S_old = self.S
-		add2S(s[1], lazy)
+		S_old = [list(self.S[i]) for i in range(self.num_learner)]
+		self.add2S(s[1], lazy)
 		self.obj -= s[0]
 		if len(self.nn) == 0:
-			self.nn, self.Lobj, self.Fobj, obj = self.f.evaluate(s0)
+			self.nn, self.Lobj, self.Fobj, obj = self.f.evaluate(self.pair2set([s[1]]))
 		elif not lazy:
-			self.nn, self.Lobj, self.Fobj, obj = self.f.evaluate_incremental(self.nn, self.Lobj, self.Fobj, S_old, s0)
+			# self.nn, self.Lobj, self.Fobj, obj = self.f.evaluate_incremental(self.nn, self.Lobj, self.Fobj, S_old, s[1])
+			nn_s, Lobj_s, Fobj_s, _= self.f.evaluate_incremental_fast(self.nn[s[1][0]], self.Fobj[s[1][0]], S_old, s[1])
+			self.nn[s[1][0]] = nn_s
+			self.Lobj[s[1][0]] += Lobj_s
+			self.Fobj[s[1][0]] = Fobj_s
 
 	def _update_heap(self):
 
 		if len(self.nn) == 0:
-			self.nn_obj = asarray([subtract(self.obj, self.f.evaluate_incremental(self.nn, self.Lobj, self.Fobj, self.S, x)[-1]) for x in self.V])
-			min_ind = argmin(self.nn_obj)
-			s0 = (self.nn_obj[min_ind], self.V[min_ind])
+			self.nn_obj = asarray([subtract(self.obj, self.f.evaluate(self.pair2set([x]))[-1]) for x in self.V])
 		else:
 			V_array = asarray(self.V).T
 			V_active_ind = where(V_array[0, :] == self.active_learner)[0]
 			V_active = V_array[:, V_active_ind].T.tolist()
-			# V_active = [v for v in self.V if v[0]==self.active_learner]
-			nn_obj_active = asarray([subtract(self.obj, self.f.evaluate_incremental(self.nn, self.Lobj, self.Fobj, self.S, x)[-1]) for x in V_active])
-			# nn_obj_active_ind = ravel_multi_index(asarray(V_active).T, (self.num_learner, self.num_sample), order='C')
-			self.nn_obj[V_active_ind] = nn_obj_active
-			# nn_obj_all_ind = ravel_multi_index(asarray(self.V).T, (self.num_learner, self.num_sample), order='C')
-			min_ind = argmin(self.nn_obj)
-			s0 = (self.nn_obj[min_ind], self.V[min_ind])
+			self.nn_obj[V_active_ind] = asarray([self.f.evaluate_incremental_fast(self.nn[x[0]], self.Fobj[x[0]], self.S, x)[-1] for x in V_active])
+
+		min_ind = argmin(self.nn_obj)
+		s0 = (self.nn_obj[min_ind], self.V[min_ind])
 
 		return s0
 
 	def _lazy_update_heap(self):
 
 		if len(self.nn) == 0:
-			nn_obj = [subtract(self.obj, self.f.evaluate(pair2set([x]))[-1]) for x in self.V]
+			nn_obj = [subtract(self.obj, self.f.evaluate(self.pair2set([x]))[-1]) for x in self.V]
 			self.heap_obj = zip(nn_obj, self.V)
 			heapq.heapify(self.heap_obj) 
 			s0 = heapq.heappop(self.heap_obj)
 		else:
 			i = 0
 			s0 = []
-			while True:
+			while len(self.V) > 0:
 
 				i += 1
 
-				while self.heap_obj[0][1][1] in self.blacklist:
-					_ = heapq.heappop(self.heap_obj)
-				if len(self.heap_obj) >= 1 and heap_obj[0][1][0] == self.active_learner:
+				while len(self.heap_obj) > 0:
+					if self.heap_obj[0][1][1] in self.blacklist:
+						_ = heapq.heappop(self.heap_obj)
+					else:
+						break
+				if len(self.heap_obj) >= 1: #and self.heap_obj[0][1][0] == self.active_learner:
 					s0 = heapq.heappop(self.heap_obj)
-					nn, Lobj, Fobj, obj = self.f.evaluate_incremental(self.nn, self.Lobj, self.Fobj, self.S, s0[1])
-					s0 = (subtract(self.obj, obj), s0[1])
+					# nn, Lobj, Fobj, obj = self.f.evaluate_incremental(self.nn, self.Lobj, self.Fobj, self.S, s0[1])
+					# s0 = (subtract(self.obj, obj), s0[1])
+					nn_s, Lobj_s, Fobj_s, obj_s = self.f.evaluate_incremental_fast(self.nn[s0[1][0]], self.Fobj[s0[1][0]], self.S, s0[1])
+					s0 = (obj_s, s0[1])
 				else:
 					break
 
-				while self.heap_obj[0][1][1] in self.blacklist:
-					_ = heapq.heappop(self.heap_obj)
+				while len(self.heap_obj) > 0:
+					if self.heap_obj[0][1][1] in self.blacklist:
+						_ = heapq.heappop(self.heap_obj)
+					else:
+						break
 				if len(self.heap_obj) >= 1:
-					s1 = heapq[0]
+					s1 = self.heap_obj[0]
 				else:
 					s1 = []
 
 				if len(s1) == 0 or s0[0] <= s1[0]:
-					self.nn = nn
-					self.Lobj = Lobj
-					self.Fobj = Fobj
+					# self.nn = deepcopy(nn)
+					# self.Lobj = list(Lobj)
+					# self.Fobj = list(Fobj)
+					self.nn[s0[1][0]] = nn_s
+					self.Lobj[s0[1][0]] += Lobj_s
+					self.Fobj[s0[1][0]] = Fobj_s
 					break
 				else:
 					_ = heapq.heappush(self.heap_obj, s0)
 					# self.V.remove(s[0][1])
 			#print 'Number of evaluations =', i
+
+		# print 's0', s0
+
+		# print 'size of priority queue:', len(self.heap_obj)
 
 		return s0

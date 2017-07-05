@@ -11,6 +11,7 @@ import time
 from facloc_graph import facloc_graph
 #from satcoverage import satcoverage
 from concavefeature import concavefeature
+from copy import deepcopy
 #from setcover import setcover 
 #from submodular_coreset import submodular_coreset
 #from videofeaturefunc import videofeaturefunc
@@ -41,28 +42,40 @@ class submdl_teach_welfare:
 	# def update_wt(wt):
 		# self.wt = wt
 
-	def update_reward(rewardMat):
+	def update_reward(self, rewardMat):
 		self.rewardMat = rewardMat
 
-	def compute_min_sin_gain_F():
+	def compute_min_sin_gain_F(self):
 
-		V = range(args.num_sample)
+		V = range(self.num_sample)
 		nn, Vobj = self.F.evaluateV()
-		minGain = Vobj - np.asarray([self.F.evaluate_decremental(nn, x, V)[1] for x in V])
-		sinGain = np.asarray([self.F.evaluate([x])[1] for x in V])
+		minGain = Vobj - asarray([self.F.evaluate_decremental(nn, x, V)[1] for x in V])
+		sinGain = asarray([self.F.evaluate([x])[1] for x in V])
 
 		return minGain, sinGain
 
 	def evaluate_incremental(self, nn, Lobj, Fobj, A, a):
 
+		nn1 = deepcopy(nn)
+		Lobj1 = list(Lobj)
+		Fobj1 = list(Fobj)
+
 		if a[1] not in A[a[0]]:
-			nn[a[0]], Fobj_a = self.F.evaluate_incremental(nn[a[0]], a[1])
-			Fobj[a[0]] = Fobj_a
-			Lobj[a[0]] += self.rewardMat[a[0], a[1]]
+			nn1[a[0]], Fobj_a = self.F.evaluate_incremental(nn1[a[0]], a[1])
+			Fobj1[a[0]] = Fobj_a
+			Lobj1[a[0]] += self.rewardMat[a[0], a[1]]
 
-		obj = sum(Lobj) + sum(Fobj)
+		obj = sum(Lobj1) + sum(Fobj1)
 
-		return nn, Lobj, Fobj, obj
+		return nn1, Lobj1, Fobj1, obj
+
+	def evaluate_incremental_fast(self, nn, Fobj_old, A, a):
+
+		if a[1] not in A:
+			nn1, Fobj = self.F.evaluate_incremental(nn, a[1])
+			Lobj = self.rewardMat[a[0], a[1]]
+
+		return nn1, Lobj, Fobj, Fobj_old - Lobj - Fobj
 
 	def evaluate(self, A):
 
@@ -81,23 +94,26 @@ class submdl_teach_welfare:
 
 	def evaluate_decremental(self, nn, Lobj, Fobj, a, A):
 
+		nn1 = deepcopy(nn)
+		Lobj1 = list(Lobj)
+		Fobj1 = list(Fobj)
+
 		if a[1] in A[a[0]]:
-			nn[a[0]], Fobj_a = self.F.evaluate_decremental(nn[a[0]], a[1], A[a[0]])
-			Fobj[a[0]] = Fobj_a
-			Lobj[a[0]] -= self.rewardMat[a[0], a[1]]
+			nn1[a[0]], Fobj_a = self.F.evaluate_decremental(nn1[a[0]], a[1], A[a[0]])
+			Fobj1[a[0]] = Fobj_a
+			Lobj1[a[0]] -= self.rewardMat[a[0], a[1]]
 
-		obj = sum(Lobj) + sum(Fobj)
+		obj = sum(Lobj1) + sum(Fobj1)
 
-		return nn, Lobj, Fobj, obj
+		return nn1, Lobj1, Fobj1, obj
 
 	def evaluateV(self):
 
 		nn, Fobj = self.F.evaluateV()
 		nn = [nn] * self.num_learner
 		Fobj = [Fobj] * self.num_learner
-		Lobj = np.sum(self.rewardMat, axis = 1)
+		Lobj = sum(self.rewardMat, axis = 1)
 
 		obj = sum(Lobj) + sum(Fobj)
 
 		return nn, Lobj, Fobj, obj
-

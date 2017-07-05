@@ -46,6 +46,7 @@ class facloc_graph:
 			row = kgraph.row
 			col = kgraph.col
 			sim = exp(-divide(power(kgraph.data, 2), mean(kgraph.data)**2))
+			print("mean similarity", sim.mean())
 			print("finish KNN graph")
 		elif dis_metric == 'euclidean_inverse':
 			kgraph = neighbors.NearestNeighbors(n_neighbors=K, algorithm='kd_tree', metric='euclidean').fit(X).kneighbors_graph(mode='distance').tocoo(copy=False)
